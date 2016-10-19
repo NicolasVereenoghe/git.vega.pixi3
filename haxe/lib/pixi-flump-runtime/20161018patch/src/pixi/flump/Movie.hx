@@ -314,8 +314,16 @@ class Movie extends Container implements IFlumpMovie {
 
 		layer.x = x;
 		layer.y = y;
-		layer.scale.x = scaleX;
-		layer.scale.y = scaleY;
+		
+		//layer.scale.x = scaleX;
+		//layer.scale.y = scaleY;
+		if ( layer.children.length > 0){
+			if( layer.name == "flipbook") trace( "WARNING : Movie::renderFrame : " + symbol.name + " : " + layer.name + " : " + scaleX + " , " + scaleY);
+			
+			layer.getChildAt( 0).scale.x = scaleX;
+			layer.getChildAt( 0).scale.y = scaleY;
+		}else trace( "WARNING : Movie::renderFrame : " + symbol.name + " : " + layer.name + " : empty");
+		
 		layer.skew.x = skewX;
 		layer.skew.y = skewY;
 		layer.alpha  = alpha;
