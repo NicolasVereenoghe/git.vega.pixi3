@@ -4338,6 +4338,7 @@ vega_screen_MyScreenLoad.prototype = $extend(vega_screen_MyScreen.prototype,{
 	,__class__: vega_screen_MyScreenLoad
 });
 var vega_screen_MyScreenInitLoad = function() {
+	this.cloneBar = null;
 	vega_screen_MyScreenLoad.call(this);
 	this.bgColor = 16777215;
 	this.fadeFrontColor = 16777215;
@@ -4348,6 +4349,8 @@ vega_screen_MyScreenInitLoad.__name__ = true;
 vega_screen_MyScreenInitLoad.__super__ = vega_screen_MyScreenLoad;
 vega_screen_MyScreenInitLoad.prototype = $extend(vega_screen_MyScreenLoad.prototype,{
 	destroy: function() {
+		vega_utils_UtilsFlump.unsetCloneLayers(this.asset.getContent());
+		this.cloneBar = null;
 		vega_local_LocalMgr.instance.freeLocalTxtInMovie(this.asset.getContent());
 		vega_screen_MyScreenLoad.prototype.destroy.call(this);
 	}
@@ -4361,6 +4364,7 @@ vega_screen_MyScreenInitLoad.prototype = $extend(vega_screen_MyScreenLoad.protot
 	}
 	,buildContent: function() {
 		vega_screen_MyScreenLoad.prototype.buildContent.call(this);
+		this.cloneBar = vega_utils_UtilsFlump.setCloneLayer(this.asset.getContent(),"barFront");
 		vega_local_LocalMgr.instance.parseAndSetLocalTxtInMovie(this.asset.getContent());
 		this.refreshBar();
 	}
@@ -4372,7 +4376,7 @@ vega_screen_MyScreenInitLoad.prototype = $extend(vega_screen_MyScreenLoad.protot
 		this.refreshBar();
 	}
 	,refreshBar: function() {
-		(js_Boot.__cast(this.asset.getContent() , pixi_flump_Movie)).getLayer("barFront").getChildAt(0).scale.x = Math.max(.005,this.curRate);
+		this.cloneBar.getChildAt(0).scale.x = Math.max(.005,this.curRate);
 	}
 	,__class__: vega_screen_MyScreenInitLoad
 });
@@ -5626,31 +5630,82 @@ vega_utils_UtilsFlump.getLayer = function(pName,pCont) {
 vega_utils_UtilsFlump.getLayers = function(pCont) {
 	return pCont.symbol.layers;
 };
-vega_utils_UtilsFlump.getLayerWithPrefixInSymbol = function(pPrefix,pDesc,pIsFull) {
-	if(pIsFull == null) pIsFull = false;
-	var lLayer;
-	var _g = 0;
-	var _g1 = pDesc.layers;
-	while(_g < _g1.length) {
-		var lLayer1 = _g1[_g];
-		++_g;
-		if(pIsFull) {
-			if(lLayer1.name == pPrefix) return lLayer1;
-		} else if(lLayer1.name.indexOf(pPrefix) == 0) return lLayer1;
-	}
-	return null;
+vega_utils_UtilsFlump.setCloneLayer = function(pMovie,pLayer,pCloneAffix) {
+	var lFrom = pMovie.getLayer(pLayer);
+	var lId = vega_utils_UtilsFlump.getSymbolId(lFrom);
+	var lName = pLayer + "vegaClone";
+	var lContent = lFrom.getChildAt(0);
+	var lClone;
+	var lClCont;
+	lFrom.visible = false;
+	if(pCloneAffix != null) lName += pCloneAffix;
+	lClone = pMovie.getChildByName(lName);
+	if(lClone == null) {
+		if(vega_assets_AssetsMgr.instance != null && vega_assets_AssetsMgr.instance.getAssetDescById(lId) != null) {
+			lClone = vega_assets_AssetsMgr.instance.getAssetInstance(lId);
+			lClCont = (js_Boot.__cast(lClone , vega_assets_AssetInstance)).getContent();
+		} else {
+			lClone = pMovie.addChildAt(new PIXI.Container(),pMovie.getChildIndex(lFrom));
+			if(js_Boot.__instanceof(lContent,pixi_flump_Movie)) lClCont = new pixi_flump_Movie((js_Boot.__cast(lContent , pixi_flump_Movie)).get_symbolId(),(js_Boot.__cast(lContent , pixi_flump_Movie)).resourceId); else lClCont = new pixi_flump_Sprite((js_Boot.__cast(lContent , pixi_flump_Sprite)).symbolId,(js_Boot.__cast(lContent , pixi_flump_Sprite)).resourceId);
+			lClone.addChild(lClCont);
+		}
+		lClone.name = lName;
+	} else lClCont = lClone.getChildAt(0);
+	lClone.x = lFrom.x;
+	lClone.y = lFrom.y;
+	lClone.skew.x = lFrom.skew.x;
+	lClone.skew.y = lFrom.skew.y;
+	lClone.alpha = lFrom.alpha;
+	lClCont.scale.x = lContent.scale.x;
+	lClCont.scale.y = lContent.scale.y;
+	return lClone;
 };
-vega_utils_UtilsFlump.getLayersWithPrefixInSymbol = function(pPrefix,pDesc) {
-	var lLayers = [];
-	var lLayer;
-	var _g = 0;
-	var _g1 = pDesc.layers;
-	while(_g < _g1.length) {
-		var lLayer1 = _g1[_g];
-		++_g;
-		if(lLayer1.name.indexOf(pPrefix) == 0) lLayers.push(lLayer1);
+vega_utils_UtilsFlump.unsetCloneLayer = function(pMovie,pLayer,pCloneAffix) {
+	var lName = pLayer + "vegaClone";
+	var lClone;
+	var lCont;
+	pMovie.getLayer(pLayer).visible = true;
+	if(pCloneAffix != null) lName += pCloneAffix;
+	lClone = pMovie.getChildByName(lName);
+	lCont = lClone.getChildAt(0);
+	if(js_Boot.__instanceof(lClone,vega_assets_AssetInstance)) {
+		lClone.skew.x = 0;
+		lClone.skew.y = 0;
+		lClone.alpha = 1;
+		lCont.scale.x = 1;
+		lCont.scale.y = 1;
+		(js_Boot.__cast(pMovie.removeChild(lClone) , vega_assets_AssetInstance)).free();
+	} else {
+		lClone.removeChild(lCont).destroy();
+		pMovie.removeChild(lClone).destroy();
 	}
-	return lLayers;
+};
+vega_utils_UtilsFlump.unsetCloneLayers = function(pMovie) {
+	var lChild;
+	var _g = 0;
+	var _g1 = pMovie.children;
+	while(_g < _g1.length) {
+		var lChild1 = _g1[_g];
+		++_g;
+		if(lChild1.name.indexOf("vegaClone") != -1) {
+			if(lChild1.name.indexOf("vegaClone") + "vegaClone".length < lChild1.name.length) vega_utils_UtilsFlump.unsetCloneLayer(pMovie,(function($this) {
+				var $r;
+				var len = lChild1.name.indexOf("vegaClone");
+				$r = HxOverrides.substr(lChild1.name,0,len);
+				return $r;
+			}(this)),(function($this) {
+				var $r;
+				var pos = lChild1.name.indexOf("vegaClone") + "vegaClone".length;
+				$r = HxOverrides.substr(lChild1.name,pos,null);
+				return $r;
+			}(this))); else vega_utils_UtilsFlump.unsetCloneLayer(pMovie,(function($this) {
+				var $r;
+				var len1 = lChild1.name.indexOf("vegaClone");
+				$r = HxOverrides.substr(lChild1.name,0,len1);
+				return $r;
+			}(this)));
+		}
+	}
 };
 vega_utils_UtilsFlump.getTextureFromSpId = function(pId) {
 	var lRes = pixi_flump_Resource.getResourceForSprite(pId);
@@ -5801,6 +5856,32 @@ vega_utils_UtilsFlump.onBtFullscreen = function(pE) {
 	if(fullScreenApi.supportsFullScreen) {
 		if(fullScreenApi.isFullScreen()) fullScreenApi.cancelFullScreen(); else fullScreenApi.requestFullScreen(window.document.documentElement);
 	}
+};
+vega_utils_UtilsFlump.getLayerWithPrefixInSymbol = function(pPrefix,pDesc,pIsFull) {
+	if(pIsFull == null) pIsFull = false;
+	var lLayer;
+	var _g = 0;
+	var _g1 = pDesc.layers;
+	while(_g < _g1.length) {
+		var lLayer1 = _g1[_g];
+		++_g;
+		if(pIsFull) {
+			if(lLayer1.name == pPrefix) return lLayer1;
+		} else if(lLayer1.name.indexOf(pPrefix) == 0) return lLayer1;
+	}
+	return null;
+};
+vega_utils_UtilsFlump.getLayersWithPrefixInSymbol = function(pPrefix,pDesc) {
+	var lLayers = [];
+	var lLayer;
+	var _g = 0;
+	var _g1 = pDesc.layers;
+	while(_g < _g1.length) {
+		var lLayer1 = _g1[_g];
+		++_g;
+		if(lLayer1.name.indexOf(pPrefix) == 0) lLayers.push(lLayer1);
+	}
+	return lLayers;
 };
 var vega_utils_UtilsPixi = function() { };
 vega_utils_UtilsPixi.__name__ = true;
@@ -6070,5 +6151,6 @@ vega_ui_MyButtonFlump.NAME_DOWN = "down";
 vega_ui_MyButtonFlump.NAME_SELECT = "select";
 vega_ui_MyButtonFlump.NAME_SELECT_DOWN = "selectDown";
 vega_ui_MyButtonFlump.NAME_SELECT_OVER = "selectOver";
+vega_utils_UtilsFlump.LAYER_CLONE_AFFIX = "vegaClone";
 Main.main();
 })(typeof console != "undefined" ? console : {log:function(){}}, typeof window != "undefined" ? window : exports, typeof window != "undefined" ? window : typeof global != "undefined" ? global : typeof self != "undefined" ? self : this);

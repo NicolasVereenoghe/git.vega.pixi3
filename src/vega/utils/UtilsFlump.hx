@@ -13,6 +13,8 @@ import pixi.flump.Movie;
 import pixi.flump.Resource;
 import pixi.flump.Sprite;
 import pixi.interaction.EventTarget;
+import vega.assets.AssetInstance;
+import vega.assets.AssetsMgr;
 import vega.shell.ApplicationMatchSize;
 import vega.ui.MyButtonFlump;
 
@@ -23,21 +25,16 @@ import vega.ui.MyButtonFlump;
 @:access(pixi.flump.Resource)
 @:access(pixi.flump.Movie)
 class UtilsFlump {
-	public static function getDescMc( pAtlasId : String, pMcId : String) : MovieSymbol {
-		return Resource.get( pAtlasId).library.movies[ pMcId];
-	}
+	/** affix de clone de layer */
+	public static inline var LAYER_CLONE_AFFIX			: String								= "vegaClone";
 	
-	public static function getLayerWithPrefix( pPrefix : String, pAtlasId : String, pMcId : String) : Layer {
-		return getLayerWithPrefixInSymbol( pPrefix, getDescMc( pAtlasId, pMcId));
-	}
+	public static function getDescMc( pAtlasId : String, pMcId : String) : MovieSymbol { return Resource.get( pAtlasId).library.movies[ pMcId]; }
 	
-	public static function getLayerWithPrefixInMovie( pPrefix : String, pCont : Movie) : Layer {
-		return getLayerWithPrefixInSymbol( pPrefix, pCont.symbol);
-	}
+	public static function getLayerWithPrefix( pPrefix : String, pAtlasId : String, pMcId : String) : Layer { return getLayerWithPrefixInSymbol( pPrefix, getDescMc( pAtlasId, pMcId)); }
 	
-	public static function getLayersWithPrefixInMovie( pPrefix : String, pCont : Movie) : Array<Layer> {
-		return getLayersWithPrefixInSymbol( pPrefix, pCont.symbol);
-	}
+	public static function getLayerWithPrefixInMovie( pPrefix : String, pCont : Movie) : Layer { return getLayerWithPrefixInSymbol( pPrefix, pCont.symbol); }
+	
+	public static function getLayersWithPrefixInMovie( pPrefix : String, pCont : Movie) : Array<Layer> { return getLayersWithPrefixInSymbol( pPrefix, pCont.symbol); }
 	
 	public static function getLayer( pName : String, pCont : Movie) : Container {
 		if ( getLayerWithPrefixInSymbol( pName, pCont.symbol, true) != null) return pCont.getLayer( pName);
@@ -46,29 +43,113 @@ class UtilsFlump {
 	
 	public static function getLayers( pCont : Movie) : Array<Layer> { return pCont.symbol.layers; }
 	
-	static function getLayerWithPrefixInSymbol( pPrefix : String, pDesc : MovieSymbol, pIsFull : Bool = false) : Layer {
-		var lLayer	: Layer;
+	/**
+	 * on crée un clone d'un layer pour pouvoir manipuler ses propriétés graphiques sans qu'il soit mis à jour à chaque frame automatiquement
+	 * si un clone existe déjà, on le met à jour
+	 * la source est rendue invisible
+	 * /!\ méthode spécialisée pour la version patchée (nico) de pixi-flump-runtime
+	 * @param	pMovie		instance de movie dont on cherche à cloner un layer
+	 * @param	pLayer		nom complet de layer à cloner dans ce Movie
+	 * @param	pCloneAffix	affix de clone pour pouvoir distinguer plusieurs instance de clones ; laisser null pour ne gérer qu'un seul clone
+	 */
+	public static function setCloneLayer( pMovie : Movie, pLayer : String, pCloneAffix : String = null) : Container {
+		var lFrom		: Container			= pMovie.getLayer( pLayer);
+		var lId			: String			= getSymbolId( lFrom);
+		var lName		: String			= pLayer + LAYER_CLONE_AFFIX;
+		var lContent	: DisplayObject		= lFrom.getChildAt( 0);
+		var lClone		: Container;
+		var lClCont		: DisplayObject;
 		
-		for ( lLayer in pDesc.layers) {
-			if ( pIsFull) {
-				if ( lLayer.name == pPrefix) return lLayer;
+		lFrom.visible = false;
+		
+		if ( pCloneAffix != null) lName += pCloneAffix;
+		
+		lClone = cast pMovie.getChildByName( lName);
+		if( lClone == null){
+			if ( AssetsMgr.instance != null && AssetsMgr.instance.getAssetDescById( lId) != null){
+				lClone	= AssetsMgr.instance.getAssetInstance( lId);
+				lClCont	= cast( lClone, AssetInstance).getContent();
 			}else{
-				if ( lLayer.name.indexOf( pPrefix) == 0) return lLayer;
+				lClone	= cast pMovie.addChildAt( new Container(), pMovie.getChildIndex( lFrom));
+				
+				if ( Std.is( lContent, Movie)){
+					lClCont = new Movie( cast( lContent, Movie).symbolId, cast( lContent, Movie).resourceId);
+				}else{
+					lClCont = new Sprite( cast( lContent, Sprite).symbolId, cast( lContent, Sprite).resourceId);
+				}
+				
+				lClone.addChild( lClCont);
 			}
-		}
+			
+			lClone.name = lName;
+		}else lClCont = lClone.getChildAt( 0);
 		
-		return null;
+		lClone.x		= lFrom.x;
+		lClone.y		= lFrom.y;
+		lClone.skew.x	= lFrom.skew.x;
+		lClone.skew.y	= lFrom.skew.y;
+		lClone.alpha	= lFrom.alpha;
+		lClCont.scale.x	= lContent.scale.x;
+		lClCont.scale.y	= lContent.scale.y;
+		
+		return lClone;
 	}
 	
-	static function getLayersWithPrefixInSymbol( pPrefix : String, pDesc : MovieSymbol) : Array<Layer> {
-		var lLayers	: Array<Layer>	= new Array<Layer>();
-		var lLayer	: Layer;
+	/**
+	 * on vire un clone de layer créé avec ::setCloneLayer
+	 * @param	pMovie		instance de movie dont on cherche à virer un clone de layer
+	 * @param	pLayer		nom complet de layer dont on veut virer le clone
+	 * @param	pCloneAffix	affix de clone pour pouvoir distinguer plusieurs instance de clones ; laisser null pour ne gérer qu'un seul clone
+	 */
+	public static function unsetCloneLayer( pMovie : Movie, pLayer : String, pCloneAffix : String = null) : Void {
+		var lName	: String			= pLayer + LAYER_CLONE_AFFIX;
+		var lClone	: Container;
+		var lCont	: DisplayObject;
 		
-		for ( lLayer in pDesc.layers){
-			if ( lLayer.name.indexOf( pPrefix) == 0) lLayers.push( lLayer);
+		pMovie.getLayer( pLayer).visible = true;
+		
+		if ( pCloneAffix != null) lName += pCloneAffix;
+		
+		lClone	= cast pMovie.getChildByName( lName);
+		lCont	= lClone.getChildAt( 0);
+		
+		if ( Std.is( lClone, AssetInstance)){
+			lClone.skew.x	= 0;
+			lClone.skew.y	= 0;
+			lClone.alpha	= 1;
+			lCont.scale.x	= 1;
+			lCont.scale.y	= 1;
+			
+			cast( pMovie.removeChild( lClone), AssetInstance).free();
+		}else{
+			lClone.removeChild( lCont).destroy();
+			pMovie.removeChild( lClone).destroy();
 		}
+	}
+	
+	/**
+	 * on vire tous les clones de layer créés avec ::setCloneLayer
+	 * @param	pMovie	instance de movie dont on cherche à virer tous les clone de layer
+	 */
+	public static function unsetCloneLayers( pMovie : Movie) : Void {
+		var lChild	: DisplayObject;
 		
-		return lLayers;
+		for ( lChild in pMovie.children){
+			if ( lChild.name.indexOf( LAYER_CLONE_AFFIX) != -1){
+				if( lChild.name.indexOf( LAYER_CLONE_AFFIX) + LAYER_CLONE_AFFIX.length < lChild.name.length){
+					unsetCloneLayer(
+						pMovie,
+						lChild.name.substr( 0, lChild.name.indexOf( LAYER_CLONE_AFFIX)),
+						lChild.name.substr( lChild.name.indexOf( LAYER_CLONE_AFFIX) + LAYER_CLONE_AFFIX.length)
+					);
+				}else{
+					unsetCloneLayer(
+						pMovie,
+						lChild.name.substr( 0, lChild.name.indexOf( LAYER_CLONE_AFFIX))
+					);
+				}
+			}
+		}
 	}
 	
 	/**
@@ -285,5 +366,30 @@ class UtilsFlump {
 				FullScreenApi.requestFullScreen( Browser.document.documentElement);
 			}
 		}
+	}
+	
+	static function getLayerWithPrefixInSymbol( pPrefix : String, pDesc : MovieSymbol, pIsFull : Bool = false) : Layer {
+		var lLayer	: Layer;
+		
+		for ( lLayer in pDesc.layers) {
+			if ( pIsFull) {
+				if ( lLayer.name == pPrefix) return lLayer;
+			}else{
+				if ( lLayer.name.indexOf( pPrefix) == 0) return lLayer;
+			}
+		}
+		
+		return null;
+	}
+	
+	static function getLayersWithPrefixInSymbol( pPrefix : String, pDesc : MovieSymbol) : Array<Layer> {
+		var lLayers	: Array<Layer>	= new Array<Layer>();
+		var lLayer	: Layer;
+		
+		for ( lLayer in pDesc.layers){
+			if ( lLayer.name.indexOf( pPrefix) == 0) lLayers.push( lLayer);
+		}
+		
+		return lLayers;
 	}
 }
